@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -38,8 +38,16 @@ namespace FancyWM.ViewModels
         public bool AllocateNewPanelSpace { get => m_allocateNewPanelSpace; set => SetField(ref m_allocateNewPanelSpace, value); }
         public bool AutoCollapsePanels { get => m_autoCollapsePanels; set => SetField(ref m_autoCollapsePanels, value); }
         public int AutoSplitCount { get => m_autoSplitCount; set => SetField(ref m_autoSplitCount, value); }
+        public OverflowPlacementStrategy OverflowPlacementStrategy
+        {
+            get => m_overflowPlacementStrategy;
+            set => SetField(ref m_overflowPlacementStrategy, value);
+        }
 
         public bool DelayReposition { get => m_delayReposition; set => SetField(ref m_delayReposition, value); }
+        public bool PreserveWindowPositionsOnExit { get => m_preserveWindowPositionsOnExit; set => SetField(ref m_preserveWindowPositionsOnExit, value); }
+        public bool EnableDragDropAutoPanelCreation { get => m_enableDragDropAutoPanelCreation; set => SetField(ref m_enableDragDropAutoPanelCreation, value); }
+        public bool HideWindowActionMenuOnHover { get => m_hideWindowActionMenuOnHover; set => SetField(ref m_hideWindowActionMenuOnHover, value); }
         public bool AnimateWindowMovement { get => m_animateWindowMovement; set => SetField(ref m_animateWindowMovement, value); }
         public bool MouseAutoFocus
         {
@@ -201,7 +209,11 @@ namespace FancyWM.ViewModels
         private bool m_allocateNewPanelSpace;
         private bool m_autoCollapsePanels;
         private int m_autoSplitCount;
+        private OverflowPlacementStrategy m_overflowPlacementStrategy;
         private bool m_delayReposition;
+        private bool m_preserveWindowPositionsOnExit;
+        private bool m_enableDragDropAutoPanelCreation;
+        private bool m_hideWindowActionMenuOnHover;
         private bool m_customAccentColor;
         private bool m_animateWindowMovement;
         private bool m_mouseAutoFocus;
@@ -244,7 +256,11 @@ namespace FancyWM.ViewModels
                     AllocateNewPanelSpace = settings.AllocateNewPanelSpace;
                     AutoCollapsePanels = settings.AutoCollapsePanels;
                     AutoSplitCount = settings.AutoSplitCount;
+                    OverflowPlacementStrategy = settings.OverflowPlacementStrategy;
                     DelayReposition = settings.DelayReposition;
+                    PreserveWindowPositionsOnExit = settings.PreserveWindowPositionsOnExit;
+                    EnableDragDropAutoPanelCreation = settings.EnableDragDropAutoPanelCreation;
+                    HideWindowActionMenuOnHover = settings.HideWindowActionMenuOnHover;
                     AnimateWindowMovement = settings.AnimateWindowMovement;
                     ModifierMoveWindow = settings.ModifierMoveWindow;
                     ModifierMoveWindowAutoFocus = settings.ModifierMoveWindowAutoFocus;
@@ -343,6 +359,8 @@ namespace FancyWM.ViewModels
 
             if (!m_isInit)
             {
+                // Avoid persisting partial values while the VM is being hydrated
+                // from Settings; only persist user-initiated updates afterwards.
                 return;
             }
 
@@ -369,7 +387,11 @@ namespace FancyWM.ViewModels
                     AllocateNewPanelSpace = AllocateNewPanelSpace,
                     AutoCollapsePanels = AutoCollapsePanels,
                     AutoSplitCount = AutoSplitCount,
+                    OverflowPlacementStrategy = OverflowPlacementStrategy,
                     DelayReposition = DelayReposition,
+                    PreserveWindowPositionsOnExit = PreserveWindowPositionsOnExit,
+                    EnableDragDropAutoPanelCreation = EnableDragDropAutoPanelCreation,
+                    HideWindowActionMenuOnHover = HideWindowActionMenuOnHover,
                     AnimateWindowMovement = AnimateWindowMovement,
                     ModifierMoveWindow = ModifierMoveWindow,
                     ModifierMoveWindowAutoFocus = ModifierMoveWindowAutoFocus,

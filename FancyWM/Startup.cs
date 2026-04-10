@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -69,6 +69,9 @@ USAGE: FancyWM.exe [OPTIONS] [ACTION]
 OPTIONS:
     -h, --help                Show this help
     -v, -vv, -vvv             Verbose logging (repeat for more)
+                              -v = Debug (tiling/drag details in fancywm.log)
+                              -vv = Verbose
+                              Log file: %AppData%\\FancyWM\\fancywm.log
     --version                 Show version info
     --action NAME             Execute specific action directly
 

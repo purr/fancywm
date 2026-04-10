@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using System.Windows.Media;
@@ -7,6 +7,13 @@ using FancyWM.Utilities;
 
 namespace FancyWM.Models
 {
+    public enum OverflowPlacementStrategy
+    {
+        Vertical,
+        Horizontal,
+        Stack,
+    }
+
     public interface ITilingServiceSettings
     {
         bool AllocateNewPanelSpace { get; }
@@ -14,10 +21,14 @@ namespace FancyWM.Models
         int WindowPadding { get; }
         int PanelHeight { get; }
         int AutoSplitCount { get; }
+        OverflowPlacementStrategy OverflowPlacementStrategy { get; }
         bool ShowFocus { get; }
         bool AutoCollapsePanels { get; }
         bool DelayReposition { get; }
         bool AutoFloatNewWindows { get; }
+        bool PreserveWindowPositionsOnExit { get; }
+        bool EnableDragDropAutoPanelCreation { get; }
+        bool HideWindowActionMenuOnHover { get; }
     }
 
     [AttributeUsage(AttributeTargets.Field)]
@@ -47,9 +58,18 @@ namespace FancyWM.Models
         public bool AutoCollapsePanels { get; init; } = false;
 
         public int AutoSplitCount { get; init; } = 2;
+        public OverflowPlacementStrategy OverflowPlacementStrategy { get; init; } = OverflowPlacementStrategy.Stack;
 
         public bool DelayReposition { get; init; } = true;
         public bool AutoFloatNewWindows { get; init; } = false;
+        // Keep current tiled positions when FancyWM is stopped/closed.
+        // If false, stop() restores pre-tiling window positions.
+        public bool PreserveWindowPositionsOnExit { get; init; } = true;
+
+        // Governs drag-drop split/stack auto-creation from drop zones.
+        // Default on to preserve the interactive tiling flow.
+        public bool EnableDragDropAutoPanelCreation { get; init; } = true;
+        public bool HideWindowActionMenuOnHover { get; init; } = false;
 
         public bool AnimateWindowMovement { get; init; } = true;
 

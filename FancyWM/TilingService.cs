@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Threading;
 
@@ -13,6 +13,7 @@ using Serilog;
 using System.Threading.Tasks;
 using System.ComponentModel;
 using System.Diagnostics;
+using Microsoft.Win32;
 
 #if DEBUG
 using Lock = FancyWM.Utilities.DebugLock;
@@ -62,9 +63,13 @@ namespace FancyWM
         private bool m_animateWindowMovement;
 
         private int m_autoSplitCount = 100;
+        private OverflowPlacementStrategy m_overflowPlacementStrategy = OverflowPlacementStrategy.Stack;
 
         private bool m_delayReposition = false;
         private bool m_autoFloatNewWindows = false;
+        // Runtime cache of user settings used by move/stop handlers.
+        private bool m_preserveWindowPositionsOnExit = true;
+        private bool m_enableDragDropAutoPanelCreation = true;
 
         private void SetAutoCollapse(bool value)
         {
@@ -181,6 +186,7 @@ namespace FancyWM
         private bool m_dirty = true;
         private UserInteraction m_currentInteraction = UserInteraction.None;
         private PanelNode? m_movingPanelNode;
+        private IWindow? m_activeDragWindow;
         private ITilingServiceIntent? m_pendingIntent;
         private readonly Counter m_frozen = new();
         private readonly Stopwatch m_sw = new();
@@ -192,7 +198,7 @@ namespace FancyWM
             m_workspace = workspace;
             m_animationThread = animationThread;
             m_display = display;
-            m_backend = new TilingWorkspace();
+            m_backend = new TilingWorkspace(m_logger);
             m_gui = new TilingOverlayRenderer(display, GetOverlayAnchor)
             {
                 PanelSpacing = GetPanelSpacing(),
@@ -225,6 +231,7 @@ namespace FancyWM
             m_workspace.VirtualDesktopManager.DesktopRemoved += OnDesktopRemoved;
             m_workspace.VirtualDesktopManager.CurrentDesktopChanged += OnCurrentDesktopChanged;
             m_workspace.CursorLocationChanged += OnCursorLocationChanged;
+            SystemEvents.PowerModeChanged += OnPowerModeChanged;
 
             m_display.ScalingChanged += OnDisplayScalingChanged;
 
@@ -261,8 +268,11 @@ namespace FancyWM
                 m_allocateNewPanelSpace = x.AllocateNewPanelSpace;
                 m_animateWindowMovement = x.AnimateWindowMovement;
                 m_autoSplitCount = x.AutoSplitCount;
+                m_overflowPlacementStrategy = x.OverflowPlacementStrategy;
                 m_delayReposition = x.DelayReposition;
                 m_autoFloatNewWindows = x.AutoFloatNewWindows;
+                m_preserveWindowPositionsOnExit = x.PreserveWindowPositionsOnExit;
+                m_enableDragDropAutoPanelCreation = x.EnableDragDropAutoPanelCreation;
                 SetWindowPadding(x.WindowPadding);
                 SetPanelHeight(x.PanelHeight);
                 SetShowFocus(x.ShowFocus);
@@ -280,7 +290,10 @@ namespace FancyWM
         public void Stop()
         {
             m_active = false;
-            RestoreOriginalLayout();
+            if (!m_preserveWindowPositionsOnExit)
+            {
+                RestoreOriginalLayout();
+            }
             m_gui.Hide();
         }
 
@@ -377,7 +390,7 @@ namespace FancyWM
                         if (!m_backend.HasWindow(window) && window.State == WindowState.Restored && CanManage(window))
                         {
                             m_logger.Debug("Discovered window {Window}", window.DebugString());
-                            var newNode = m_backend.RegisterWindow(window, maxTreeWidth: m_autoSplitCount);
+                            var newNode = m_backend.RegisterWindow(window, m_autoSplitCount, m_overflowPlacementStrategy);
                             newNode.Parent!.Padding = GetPanelPaddingRect();
                             newNode.Parent!.Spacing = GetPanelSpacing();
                             InvalidateLayout();
@@ -581,6 +594,7 @@ namespace FancyWM
             m_workspace.VirtualDesktopManager.DesktopRemoved -= OnDesktopRemoved;
             m_workspace.VirtualDesktopManager.CurrentDesktopChanged -= OnCurrentDesktopChanged;
             m_workspace.CursorLocationChanged -= OnCursorLocationChanged;
+            SystemEvents.PowerModeChanged -= OnPowerModeChanged;
 
             m_workspace.WindowAdded -= OnWindowAdded;
             m_workspace.WindowRemoved -= OnWindowRemoved;
@@ -677,6 +691,23 @@ namespace FancyWM
         public Rectangle GetBounds()
         {
             return m_display.Bounds;
+        }
+
+        private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode != PowerModes.Resume)
+            {
+                return;
+            }
+
+            _ = m_dispatcher.RunAsync(async () =>
+            {
+                // Let Windows finish monitor/session restoration first; running
+                // refresh immediately can race with transient display/work-area changes.
+                await Task.Delay(750);
+                Refresh();
+                InvalidateLayout();
+            });
         }
 
         public IWindow? FindClosest(Point center)
