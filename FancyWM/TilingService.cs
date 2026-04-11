@@ -187,6 +187,12 @@ namespace FancyWM
         private UserInteraction m_currentInteraction = UserInteraction.None;
         private PanelNode? m_movingPanelNode;
         private IWindow? m_activeDragWindow;
+        /// <summary>
+        /// True when WM_NCHITTEST at gesture start returned a border/sizing hit-test
+        /// code, meaning the user is edge-resizing rather than title-bar-moving.
+        /// Suppresses drag-drop preview cues for the duration of the gesture.
+        /// </summary>
+        private bool m_borderResizeGesture;
         private ITilingServiceIntent? m_pendingIntent;
         private readonly Counter m_frozen = new();
         private readonly Stopwatch m_sw = new();

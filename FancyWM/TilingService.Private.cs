@@ -320,6 +320,10 @@ namespace FancyWM
 
         private Rectangle? GetPreviewRectangle()
         {
+            // WM_NCHITTEST classified this gesture as a border resize, not a move.
+            if (m_borderResizeGesture)
+                return null;
+
             var windowDragPreview =
                 m_currentInteraction == UserInteraction.Moving
                 || (m_currentInteraction == UserInteraction.Starting && m_activeDragWindow != null)
@@ -412,7 +416,9 @@ namespace FancyWM
 
         private DropZonePreviewState? GetDropZonePreviewState()
         {
-            if (m_currentInteraction == UserInteraction.Resizing)
+            // Suppress cues when WM_NCHITTEST told us this is a border resize,
+            // or when the size-changed heuristic flagged it as Resizing.
+            if (m_borderResizeGesture || m_currentInteraction == UserInteraction.Resizing)
             {
                 return null;
             }
@@ -719,7 +725,9 @@ namespace FancyWM
         {
             // Keep drag previews responsive to cursor movement even when some windows
             // don't emit position-changed events continuously during title-bar drag.
-            if (m_currentInteraction != UserInteraction.Resizing
+            // Skip when border-resize gesture is active (WM_NCHITTEST classified it).
+            if (!m_borderResizeGesture
+                && m_currentInteraction != UserInteraction.Resizing
                 && (m_activeDragWindow != null || m_movingPanelNode != null))
             {
                 InvalidateLayout();
@@ -1334,6 +1342,7 @@ namespace FancyWM
             }
 
             m_activeDragWindow = null;
+            m_borderResizeGesture = false;
             m_currentInteraction = UserInteraction.None;
         }
 
@@ -1657,6 +1666,9 @@ namespace FancyWM
             }
 
             m_activeDragWindow = e.Source;
+            // Classify gesture at start: WM_NCHITTEST tells us if the cursor is
+            // over a sizing border, so we can suppress drag-drop cues during resize.
+            m_borderResizeGesture = NcHitTest.IsBorderResize(e.Source.Handle);
             m_currentInteraction = UserInteraction.Starting;
             InvalidateLayout();
         }
