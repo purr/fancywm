@@ -600,7 +600,18 @@ namespace FancyWM
 
         private IntPtr GetOverlayAnchor()
         {
-            var desktop = m_workspace.VirtualDesktopManager.CurrentDesktop;
+            // COM VD class factory can fail after sleep/wake while Explorer
+            // re-registers (REGDB_E_CLASSNOTREG — GitHub #447). Return no
+            // anchor; the overlay loop will retry on the next tick.
+            IVirtualDesktop desktop;
+            try
+            {
+                desktop = m_workspace.VirtualDesktopManager.CurrentDesktop;
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                return new IntPtr(0);
+            }
             using (m_backendLock.EnterScope())
             {
                 try
@@ -716,19 +727,26 @@ namespace FancyWM
 
             foreach (var window in candidates)
             {
-                // Un-float so DetectChanges → CanManage → RegisterWindow path runs.
-                using (m_floatingSetLock.EnterScope())
+                try
                 {
-                    m_floatingSet.Remove(window);
-                }
-                using (m_placementFailedSetLock.EnterScope())
-                {
-                    m_placementFailedSet.Remove(window);
-                }
+                    // Un-float so DetectChanges → CanManage → RegisterWindow path runs.
+                    using (m_floatingSetLock.EnterScope())
+                    {
+                        m_floatingSet.Remove(window);
+                    }
+                    using (m_placementFailedSetLock.EnterScope())
+                    {
+                        m_placementFailedSet.Remove(window);
+                    }
 
-                // DetectChanges will re-register if constraints now permit it.
-                // If it still fails, OnPlacementFailed re-adds to both sets.
-                DetectChanges(window);
+                    // DetectChanges will re-register if constraints now permit it.
+                    // If it still fails, OnPlacementFailed re-adds to both sets.
+                    DetectChanges(window);
+                }
+                catch (InvalidWindowReferenceException)
+                {
+                    // Window was destroyed between scheduling the retry and now.
+                }
             }
         }
 
@@ -1949,8 +1967,18 @@ namespace FancyWM
                 return false;
             }
 
-            // Virtual Desktop stuff is very expensive
-            if (m_workspace.VirtualDesktopManager.IsWindowPinned(x))
+            // Virtual Desktop stuff is very expensive.
+            // The COM VD service can throw transiently during input-sync calls,
+            // display changes, or hibernation resume (GitHub #450, #457).
+            // Safe default: don't manage the window when we can't determine pin state.
+            try
+            {
+                if (m_workspace.VirtualDesktopManager.IsWindowPinned(x))
+                {
+                    return false;
+                }
+            }
+            catch (System.Runtime.InteropServices.COMException)
             {
                 return false;
             }
