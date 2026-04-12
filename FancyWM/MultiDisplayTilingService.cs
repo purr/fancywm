@@ -156,6 +156,26 @@ namespace FancyWM
                         m_tilingServices.Add(e.Source, tiling);
                     }
                     UpdateActiveDisplay(reason: $"display {e.Source} was added");
+
+                    // After a display reconnect, existing services may have windows
+                    // that were auto-floated due to transient constraint failures.
+                    // Retry after a delay so display geometry / window metrics settle.
+                    ScheduleRetryForAllDisplays();
+                }
+            });
+        }
+
+        private void ScheduleRetryForAllDisplays()
+        {
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                await System.Threading.Tasks.Task.Delay(2000);
+                lock (m_syncRoot)
+                {
+                    foreach (var tiling in m_tilingServices.Values)
+                    {
+                        tiling.RetryFailedPlacements();
+                    }
                 }
             });
         }

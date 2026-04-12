@@ -169,6 +169,13 @@ namespace FancyWM
         private readonly HashSet<IWindow> m_floatingSet = [];
         private readonly Utilities.DebugLock m_floatingSetLock = new(LockThreshold);
 
+        /// Windows auto-floated due to transient placement failure (e.g. after
+        /// hibernation resume). Tracked separately so RetryFailedPlacements() can
+        /// attempt to re-tile them once constraints stabilize, without touching
+        /// user-intentionally-floated windows.
+        private readonly HashSet<IWindow> m_placementFailedSet = [];
+        private readonly Utilities.DebugLock m_placementFailedSetLock = new(LockThreshold);
+
         private readonly HashSet<IWindow> m_ignoreRepositionSet = [];
         private readonly Utilities.DebugLock m_ignoreRepositionSetLock = new(LockThreshold);
 
@@ -713,6 +720,17 @@ namespace FancyWM
                 await Task.Delay(750);
                 Refresh();
                 InvalidateLayout();
+
+                // Secondary pass: windows that failed placement above due to stale
+                // min/max constraints get another chance now that displays have
+                // had more time to settle. Three retries spaced 2s apart cover
+                // slow monitor wake-up scenarios.
+                for (int i = 0; i < 3; i++)
+                {
+                    await Task.Delay(2000);
+                    RetryFailedPlacements();
+                    InvalidateLayout();
+                }
             });
         }
 

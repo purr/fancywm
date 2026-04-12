@@ -94,6 +94,12 @@ namespace FancyWM
                     {
                         m_floatingSet.Add(largestWindow.WindowReference);
                     }
+                    // Track for retry — flex constraints are often transient after
+                    // display reconnect / hibernation resume.
+                    using (m_placementFailedSetLock.EnterScope())
+                    {
+                        m_placementFailedSet.Add(largestWindow.WindowReference);
+                    }
                     DetectChanges(largestWindow.WindowReference);
                     PlacementFailed?.Invoke(this, new TilingFailedEventArgs(TilingError.NoValidPlacementExists, largestWindow.WindowReference));
                 }
@@ -439,6 +445,17 @@ namespace FancyWM
                 return null;
             }
 
+            // Safety net: suppress cues if the drag source became floating mid-drag
+            // (e.g. via hotkey or exclusion-list update while dragging).
+            if (m_activeDragWindow != null)
+            {
+                using (m_floatingSetLock.EnterScope())
+                {
+                    if (m_floatingSet.Contains(m_activeDragWindow))
+                        return null;
+                }
+            }
+
             try
             {
                 if (IsSwapModifierPressed())
@@ -631,6 +648,12 @@ namespace FancyWM
                     m_floatingSet.Add(window);
                 }
             }
+            // User explicitly toggled float — remove from retry tracking so
+            // RetryFailedPlacements() won't override the user's intent.
+            using (m_placementFailedSetLock.EnterScope())
+            {
+                m_placementFailedSet.Remove(window);
+            }
             DetectChanges(window);
             if (floated)
             {
@@ -664,7 +687,48 @@ namespace FancyWM
                 {
                     m_floatingSet.Add(e.FailSource);
                 }
+                // Mark as auto-floated so RetryFailedPlacements() can re-attempt
+                // once transient constraints (e.g. post-hibernation) resolve.
+                using (m_placementFailedSetLock.EnterScope())
+                {
+                    m_placementFailedSet.Add(e.FailSource);
+                }
                 OnWindowFloated(e.FailSource);
+            }
+        }
+
+        /// Re-attempts tiling for windows that were auto-floated due to transient
+        /// constraint failures (e.g. stale min/max sizes right after hibernation
+        /// resume or display reconnect). Called on a delay to give Windows time to
+        /// stabilize display geometry and window metrics.
+        internal void RetryFailedPlacements()
+        {
+            List<IWindow> candidates;
+            using (m_placementFailedSetLock.EnterScope())
+            {
+                candidates = [.. m_placementFailedSet];
+            }
+
+            if (candidates.Count == 0)
+                return;
+
+            m_logger.Information("Retrying placement for {Count} auto-floated window(s)", candidates.Count);
+
+            foreach (var window in candidates)
+            {
+                // Un-float so DetectChanges → CanManage → RegisterWindow path runs.
+                using (m_floatingSetLock.EnterScope())
+                {
+                    m_floatingSet.Remove(window);
+                }
+                using (m_placementFailedSetLock.EnterScope())
+                {
+                    m_placementFailedSet.Remove(window);
+                }
+
+                // DetectChanges will re-register if constraints now permit it.
+                // If it still fails, OnPlacementFailed re-adds to both sets.
+                DetectChanges(window);
             }
         }
 
@@ -1273,6 +1337,10 @@ namespace FancyWM
             {
                 m_floatingSet.Remove(e.Source);
             }
+            using (m_placementFailedSetLock.EnterScope())
+            {
+                m_placementFailedSet.Remove(e.Source);
+            }
             using (m_newWindowSetLock.EnterScope())
             {
                 m_newWindowSet.Remove(e.Source);
@@ -1663,6 +1731,15 @@ namespace FancyWM
             using (m_ignoreRepositionSetLock.EnterScope())
             {
                 m_ignoreRepositionSet.Add(e.Source);
+            }
+
+            // Floating/exempt windows must not trigger drag-drop zone cues on tiled
+            // windows — they can never participate in panel creation. Skip setting
+            // m_activeDragWindow so GetDropZonePreviewState() stays inert.
+            using (m_floatingSetLock.EnterScope())
+            {
+                if (m_floatingSet.Contains(e.Source))
+                    return;
             }
 
             m_activeDragWindow = e.Source;
