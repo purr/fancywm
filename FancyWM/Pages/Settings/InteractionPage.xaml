@@ -79,6 +79,26 @@
             <Border Style="{DynamicResource SettingsItemStyle}">
                 <StackPanel>
                     <DockPanel LastChildFill="True">
+                        <ComboBox DockPanel.Dock="Right"
+                                  Width="240"
+                                  SelectedValuePath="Tag"
+                                  SelectedValue="{Binding Path=SiblingDragMode, Mode=TwoWay}">
+                            <ComboBoxItem Content="Hybrid (center stacks, edges reorder)" Tag="{x:Static models:SiblingDragMode.Hybrid}" />
+                            <ComboBoxItem Content="Edges split, center stacks" Tag="{x:Static models:SiblingDragMode.EdgeSplit}" />
+                        </ComboBox>
+                        <TextBlock VerticalAlignment="Center" Margin="0,0,16,0" Text="Drag onto a sibling window" />
+                    </DockPanel>
+                    <TextBlock TextWrapping="WrapWithOverflow"
+                               Padding="0,16,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemControlPageTextBaseMediumBrush}"
+                               Text="What happens when you drag a window's title bar onto another window already in the same panel. Hybrid: drop on the center to stack/tab, drop near an edge to reorder. Edges split: every edge drop creates a nested split. Creating panels via the hover-menu handles is unaffected." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{DynamicResource SettingsItemStyle}">
+                <StackPanel>
+                    <DockPanel LastChildFill="True">
                         <CheckBox DockPanel.Dock="Right" IsChecked="{Binding Path=HideWindowActionMenuOnHover, Mode=TwoWay}" />
                         <TextBlock VerticalAlignment="Center" Margin="0,0,16,0" Text="Hide window action menu on top-edge hover" />
                     </DockPanel>
@@ -87,6 +107,20 @@
                                VerticalAlignment="Center"
                                Foreground="{DynamicResource SystemControlPageTextBaseMediumBrush}"
                                Text="When disabled (default), moving the cursor near the top edge of a focused tiled window reveals action buttons and more options." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{DynamicResource SettingsItemStyle}">
+                <StackPanel>
+                    <DockPanel LastChildFill="True">
+                        <CheckBox DockPanel.Dock="Right" IsChecked="{Binding Path=ShowTabCloseButton, Mode=TwoWay}" />
+                        <TextBlock VerticalAlignment="Center" Margin="0,0,16,0" Text="Show close (X) button on panel tabs" />
+                    </DockPanel>
+                    <TextBlock TextWrapping="WrapWithOverflow"
+                               Padding="0,16,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemControlPageTextBaseMediumBrush}"
+                               Text="When disabled (default), panel tabs have no close button, preventing accidental window closes when clicking a tab. Middle-click still closes a tab." />
                 </StackPanel>
             </Border>
 

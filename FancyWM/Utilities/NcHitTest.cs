@@ -24,8 +24,11 @@ namespace FancyWM.Utilities
         private const int HTBORDER = 18;
         private const int HTSIZE = 4;  // aka HTGROWBOX
 
+        private const uint SMTO_ABORTIFHUNG = 0x0002;
+        private const uint SMTO_BLOCK = 0x0001;
+
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        private static extern nint SendMessage(IntPtr hWnd, int msg, nint wParam, nint lParam);
+        private static extern nint SendMessageTimeout(IntPtr hWnd, int msg, nint wParam, nint lParam, uint flags, uint uTimeout, out nint lpdwResult);
 
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -45,7 +48,11 @@ namespace FancyWM.Utilities
         {
             if (!GetCursorPos(out var cursor))
                 return false;
-            nint result = SendMessage(hwnd, WM_NCHITTEST, 0, MakeLParam(cursor.X, cursor.Y));
+            // Cross-process WM_NCHITTEST must not block the gesture thread on a hung
+            // window. Abort if the target is unresponsive and treat that as "not a border".
+            if (SendMessageTimeout(hwnd, WM_NCHITTEST, 0, MakeLParam(cursor.X, cursor.Y),
+                    SMTO_ABORTIFHUNG | SMTO_BLOCK, 100, out var result) == 0)
+                return false;
             int code = (int)(result & 0xFFFF);
             return code is HTLEFT or HTRIGHT or HTTOP or HTTOPLEFT or HTTOPRIGHT
                        or HTBOTTOM or HTBOTTOMLEFT or HTBOTTOMRIGHT

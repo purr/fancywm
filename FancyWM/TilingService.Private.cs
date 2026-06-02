@@ -330,6 +330,11 @@ namespace FancyWM
             if (m_borderResizeGesture)
                 return null;
 
+            // Mouse drag already released: hide the cue immediately rather than waiting
+            // for a PositionChangeEnd that some windows never emit (keyboard moves keep theirs).
+            if (m_activeDragWindow != null && m_activeDragIsMouse && !m_leftButtonDown)
+                return null;
+
             var windowDragPreview =
                 m_currentInteraction == UserInteraction.Moving
                 || (m_currentInteraction == UserInteraction.Starting && m_activeDragWindow != null)
@@ -433,6 +438,12 @@ namespace FancyWM
             {
                 // Drop-zone preview communicates panel-creation outcomes; hide it when
                 // auto-creation is disabled to keep visual intent aligned with behavior.
+                return null;
+            }
+
+            // Mouse drag already released: hide cues immediately (see GetPreviewRectangle).
+            if (m_activeDragWindow != null && m_activeDragIsMouse && !m_leftButtonDown)
+            {
                 return null;
             }
 
@@ -608,8 +619,15 @@ namespace FancyWM
             {
                 desktop = m_workspace.VirtualDesktopManager.CurrentDesktop;
             }
-            catch (System.Runtime.InteropServices.COMException)
+            catch (System.Runtime.InteropServices.COMException ex)
             {
+                // Throttle: GetOverlayAnchor runs on every overlay tick, so log at most
+                // once per 5s while the VD COM service is unregistered (sleep/wake).
+                if (m_sw.Elapsed - m_lastAnchorComWarning > TimeSpan.FromSeconds(5))
+                {
+                    m_lastAnchorComWarning = m_sw.Elapsed;
+                    m_logger.Warning(ex, "Virtual desktop COM unavailable while resolving overlay anchor; skipping anchor this tick");
+                }
                 return new IntPtr(0);
             }
             using (m_backendLock.EnterScope())
@@ -1333,6 +1351,18 @@ namespace FancyWM
         {
             m_logger.Information("Window {Window} removed from workspace", e.Source.DebugString());
 
+            // The drag source vanished mid-gesture (e.g. it closed itself while being
+            // dragged). No PositionChangeEnd will arrive to clear the gesture state, so
+            // the drop-zone/preview cues would stay stuck on screen. Reset it here.
+            if (ReferenceEquals(m_activeDragWindow, e.Source))
+            {
+                m_activeDragWindow = null;
+                m_activeDragIsMouse = false;
+                m_borderResizeGesture = false;
+                m_currentInteraction = UserInteraction.None;
+                InvalidateLayout();
+            }
+
             UnbindEventHandlers(e.Source);
             using (m_savedLocationsLock.EnterScope())
             {
@@ -1428,6 +1458,7 @@ namespace FancyWM
             }
 
             m_activeDragWindow = null;
+            m_activeDragIsMouse = false;
             m_borderResizeGesture = false;
             m_currentInteraction = UserInteraction.None;
         }
@@ -1751,16 +1782,18 @@ namespace FancyWM
                 m_ignoreRepositionSet.Add(e.Source);
             }
 
-            // Floating/exempt windows must not trigger drag-drop zone cues on tiled
-            // windows — they can never participate in panel creation. Skip setting
-            // m_activeDragWindow so GetDropZonePreviewState() stays inert.
-            using (m_floatingSetLock.EnterScope())
+            // Only windows actually tiled by THIS backend may trigger drag-drop cues. Anything
+            // not in the tree — floating, topmost, non-resizable, pinned, off-display, or managed
+            // by another display's service — can't participate in panel creation, so it must not
+            // set m_activeDragWindow (which would light up drop cues over tiled windows).
+            using (m_backendLock.EnterScope())
             {
-                if (m_floatingSet.Contains(e.Source))
+                if (!m_backend.HasWindow(e.Source))
                     return;
             }
 
             m_activeDragWindow = e.Source;
+            m_activeDragIsMouse = m_leftButtonDown;
             // Classify gesture at start: WM_NCHITTEST tells us if the cursor is
             // over a sizing border, so we can suppress drag-drop cues during resize.
             m_borderResizeGesture = NcHitTest.IsBorderResize(e.Source.Handle);
@@ -1833,6 +1866,90 @@ namespace FancyWM
             window.GotFocus -= OnWindowGotFocus;
             window.LostFocus -= OnWindowLostFocus;
             window.TopmostChanged -= OnWindowTopmostChanged;
+        }
+
+        private static readonly TimeSpan StuckDragRecoveryDelay = TimeSpan.FromMilliseconds(350);
+
+        private void SubscribeGlobalMouseHook()
+        {
+            if (App.Current.Services.GetService<LowLevelMouseHook>() is LowLevelMouseHook hook)
+            {
+                m_mouseHook = hook;
+                m_mouseHook.ButtonStateChanged += OnGlobalMouseButtonStateChanged;
+            }
+        }
+
+        private void UnsubscribeGlobalMouseHook()
+        {
+            if (m_mouseHook != null)
+            {
+                m_mouseHook.ButtonStateChanged -= OnGlobalMouseButtonStateChanged;
+                m_mouseHook = null;
+            }
+        }
+
+        private void OnGlobalMouseButtonStateChanged(object? sender, ref LowLevelMouseHook.ButtonStateChangedEventArgs e)
+        {
+            if (e.Button != LowLevelMouseHook.MouseButton.Left)
+                return;
+
+            if (e.IsPressed)
+            {
+                m_leftButtonDown = true;
+                return;
+            }
+
+            m_leftButtonDown = false;
+
+            // Button released => any mouse drag is over, so hide the drag cues DIRECTLY and
+            // unconditionally. Don't route this through the layout recompute / GetDropZonePreviewState
+            // gate — that path can be throttled or never run (e.g. when a window never emits
+            // PositionChangeEnd), which left the cue stuck on screen. Clearing the GUI cue does not
+            // touch gesture state, so a pending delayed placement still completes in PositionChangeEnd.
+            _ = m_dispatcher.InvokeAsync(() =>
+            {
+                m_gui.DropZonePreview = null;
+                m_gui.PreviewRectangle = null;
+            });
+
+            // Separately, recover stuck gesture state after a short grace period so PositionChangeEnd
+            // can win the race for the real placement first. No-ops when nothing needs recovery.
+            _ = m_dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(StuckDragRecoveryDelay);
+                ClearStuckDragStateIfIdle();
+            });
+        }
+
+        private void ClearStuckDragStateIfIdle()
+        {
+            // A fresh press started a new gesture — leave it alone.
+            if (m_leftButtonDown)
+                return;
+            // Panel moves are driven by WPF mouse capture and clear themselves reliably.
+            if (m_movingPanelNode != null)
+                return;
+            if (m_activeDragWindow == null && m_currentInteraction == UserInteraction.None && !m_borderResizeGesture)
+                return;
+
+            // In DelayReposition mode the actual placement runs in OnWindowPositionChangeEnd,
+            // gated on m_currentInteraction == Moving. EVENT_SYSTEM_MOVESIZEEND (which drives
+            // that handler) can arrive well after the physical button-up for slow/busy windows.
+            // Do NOT clear the interaction here — that would skip DoWindowMove and silently drop
+            // the placement. But DO refresh layout so the button-up gate hides the released cue
+            // (the cue must not stay stuck while we wait for the late PositionChangeEnd).
+            if (m_delayReposition && m_currentInteraction == UserInteraction.Moving && m_activeDragWindow != null)
+            {
+                InvalidateLayout();
+                return;
+            }
+
+            m_logger.Debug("Recovering stuck drag-gesture state after mouse release");
+            m_activeDragWindow = null;
+            m_activeDragIsMouse = false;
+            m_borderResizeGesture = false;
+            m_currentInteraction = UserInteraction.None;
+            InvalidateLayout();
         }
 
         private bool IsSwapModifierPressed()
@@ -1978,8 +2095,9 @@ namespace FancyWM
                     return false;
                 }
             }
-            catch (System.Runtime.InteropServices.COMException)
+            catch (System.Runtime.InteropServices.COMException ex)
             {
+                m_logger.Verbose(ex, "Virtual desktop pin-state query failed for {Window}; treating as unmanageable this pass", x.DebugString());
                 return false;
             }
 

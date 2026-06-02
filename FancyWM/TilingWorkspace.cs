@@ -130,6 +130,13 @@ namespace FancyWM
         /// <summary>Fraction of min(w,h) for corner <see cref="DropZone.Neutral"/> (matches highlight geometry).</summary>
         internal const double DropZoneCornerFraction = 0.14;
 
+        /// <summary>
+        /// Same-parent sibling-drag behavior; see <see cref="SiblingDragMode"/>. Driven by the
+        /// user setting (<see cref="ITilingServiceSettings.SiblingDragMode"/>) via TilingService.
+        /// Implemented in <see cref="MoveNode"/>'s same-parent branch.
+        /// </summary>
+        public SiblingDragMode SiblingDrag { get; set; } = SiblingDragMode.Hybrid;
+
         private readonly TilingWorkspaceState m_states = new();
         private readonly Dictionary<IWindow, Rectangle> m_originalPositions = [];
         private readonly ILogger? m_logger;
@@ -702,6 +709,13 @@ namespace FancyWM
                             if (allowNesting && node is WindowNode && nodeAtPoint is WindowNode wAtPoint)
                             {
                                 var siblingDropZone = ClassifyDropZone(wAtPoint.ComputedRectangle, pt);
+                                // Same-parent outcome depends on SiblingDrag mode:
+                                //   - center always stacks
+                                //   - edges split for everything except Hybrid (which reorders flatly).
+                                //     "anything but Hybrid -> split" makes create-panels the default and
+                                //     keeps a stale/removed saved value behaving as panel creation.
+                                bool splitOnEdge = SiblingDrag != SiblingDragMode.Hybrid;
+
                                 if (siblingDropZone == DropZone.Center)
                                 {
                                     EnsureDropZoneParent(wAtPoint, DropZone.Center, allowFlipInPlace: true);
@@ -712,9 +726,9 @@ namespace FancyWM
                                     CleanupAfterMove(oldParent);
                                     stackParent.RemovePlaceholders();
                                 }
-                                else
+                                else if (splitOnEdge)
                                 {
-                                    // Same parent, non-stack: edge/corner zones need EnsureDropZoneParent + insert (like cross-parent),
+                                    // EdgeSplit: edge/corner zones need EnsureDropZoneParent + insert (like cross-parent),
                                     // not only Move() reorder — otherwise left/right/top/bottom never create splits.
                                     // Require pt on the target tile (parent rect can exclude narrow bands at chrome/gaps).
                                     if (!IsPointInWindowDropTarget(wAtPoint, pt))
@@ -735,6 +749,12 @@ namespace FancyWM
                                     targetParent.Attach(ClampInsertionIndex(targetParent, insertionIndex), node);
                                     CleanupAfterMove(oldParent);
                                     node.Parent!.RemovePlaceholders();
+                                }
+                                else
+                                {
+                                    // Hybrid edge zones: reorder within the shared panel without
+                                    // nesting, matching legacy flat Move() semantics.
+                                    FlatSiblingReorder(node, wAtPoint);
                                 }
                             }
                             else
@@ -843,18 +863,10 @@ namespace FancyWM
                         }
                         else
                         {
-                            var sourceIndex = oldParent.IndexOf(node);
-                            var targetIndex = ClampInsertionIndex(oldParent, insertionIndex);
-                            if (targetIndex > sourceIndex)
-                            {
-                                // Move() uses post-removal indexing semantics.
-                                targetIndex--;
-                            }
-
-                            if (sourceIndex != targetIndex)
-                            {
-                                oldParent.Move(sourceIndex, targetIndex);
-                            }
+                            // Same-parent, non-nesting: flat reorder into the target's slot.
+                            // Legacy Move(source, IndexOf(target)) semantics — the insertion-index
+                            // path no-ops when the cursor sits on the target's exact midpoint.
+                            FlatSiblingReorder(node, nodeAtPoint);
                         }
                     }
                     catch (UnsatisfiableFlexConstraintsException)
@@ -863,6 +875,30 @@ namespace FancyWM
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Reorders <paramref name="node"/> into <paramref name="targetSibling"/>'s slot within their
+        /// shared parent, shifting the rest. Reproduces the pre-drop-zone flat Move() reorder that the
+        /// flat-panel tests assert. <see cref="PanelNode.Move"/> inserts at the target index in the
+        /// post-removal list, so passing the target's pre-removal index lands the node where expected.
+        /// </summary>
+        private static void FlatSiblingReorder(TilingNode node, TilingNode targetSibling)
+        {
+            var parent = node.Parent;
+            if (parent == null || !ReferenceEquals(parent, targetSibling.Parent))
+            {
+                return;
+            }
+
+            var sourceIndex = parent.IndexOf(node);
+            var targetIndex = parent.IndexOf(targetSibling);
+            if (sourceIndex < 0 || targetIndex < 0 || sourceIndex == targetIndex)
+            {
+                return;
+            }
+
+            parent.Move(sourceIndex, targetIndex);
         }
 
         private static int FindInsertionIndex(TilingNode nodeAtPoint, Point pt, DropZone dropZone)

@@ -201,6 +201,13 @@ namespace FancyWM
         /// </summary>
         private bool m_borderResizeGesture;
         private ITilingServiceIntent? m_pendingIntent;
+        private LowLevelMouseHook? m_mouseHook;
+        private volatile bool m_leftButtonDown;
+        // True when the active window drag was initiated by a mouse press (vs. keyboard
+        // system-menu move). Lets us hide drag cues the instant the button is released
+        // without affecting keyboard-driven moves.
+        private bool m_activeDragIsMouse;
+        private TimeSpan m_lastAnchorComWarning = TimeSpan.FromSeconds(-60);
         private readonly Counter m_frozen = new();
         private readonly Stopwatch m_sw = new();
 
@@ -254,6 +261,8 @@ namespace FancyWM
             PlacementFailed += OnPlacementFailed;
             PendingIntentChanged += OnPendingIntentChanged;
 
+            SubscribeGlobalMouseHook();
+
             m_subscriptions.Add(m_gui);
             m_subscriptions.Add(settings.Subscribe(OnSettingsChanged));
 
@@ -286,6 +295,7 @@ namespace FancyWM
                 m_autoFloatNewWindows = x.AutoFloatNewWindows;
                 m_preserveWindowPositionsOnExit = x.PreserveWindowPositionsOnExit;
                 m_enableDragDropAutoPanelCreation = x.EnableDragDropAutoPanelCreation;
+                m_backend.SiblingDrag = x.SiblingDragMode;
                 SetWindowPadding(x.WindowPadding);
                 SetPanelHeight(x.PanelHeight);
                 SetShowFocus(x.ShowFocus);
@@ -608,6 +618,8 @@ namespace FancyWM
             m_workspace.VirtualDesktopManager.CurrentDesktopChanged -= OnCurrentDesktopChanged;
             m_workspace.CursorLocationChanged -= OnCursorLocationChanged;
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+
+            UnsubscribeGlobalMouseHook();
 
             m_workspace.WindowAdded -= OnWindowAdded;
             m_workspace.WindowRemoved -= OnWindowRemoved;

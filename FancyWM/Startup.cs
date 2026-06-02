@@ -34,6 +34,10 @@ namespace FancyWM
 
         private const string LogFile = "fancywm.log";
 
+        // Held for the whole process lifetime to enforce single-instance; released by the
+        // OS on process exit. Static so it is never garbage-collected while running.
+        private static Mutex? s_instanceMutex;
+
         private static bool IsPackaged
         {
             get
@@ -130,11 +134,16 @@ Type 'FancyWM --help' from anywhere after installation.
                 }
             }
 
-            // Check if other instances are running
-            var exists = Process.GetProcessesByName(Process.GetCurrentProcess().ProcessName)
-                .Where(x => x.MainWindowHandle != IntPtr.Zero)
-                .Any();
-            if (exists)
+            // Single-instance guard. The old Process/MainWindowHandle scan missed a
+            // backgrounded instance — a tray/WM process usually has no main window, so
+            // a second instance would start and the two would fight over every window's
+            // position (continuous re-tiling). A named mutex detects the running instance
+            // regardless of window state. Local\ scopes it per logon session, which is the
+            // right granularity for a per-user window manager. The mutex is freed by the OS
+            // when the owning process exits (including taskkill during self-restart), so the
+            // 1s gap in OnProgramExit's relaunch lets the new instance acquire it cleanly.
+            s_instanceMutex = new Mutex(initiallyOwned: true, @"Local\FancyWM.SingleInstance", out bool createdNew);
+            if (!createdNew)
             {
                 MessageBox.Show(Strings.About_AlreadyRunning, "FancyWM", MessageBoxButton.OK, MessageBoxImage.Error);
                 return 1;

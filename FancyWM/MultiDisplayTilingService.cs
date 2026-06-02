@@ -165,16 +165,43 @@ namespace FancyWM
             });
         }
 
+        private bool m_retryScheduled;
+
         private void ScheduleRetryForAllDisplays()
         {
+            // Multiple display reconnects (and power-resume) can fire in quick succession.
+            // Collapse them into a single pending retry pass instead of stacking timers.
+            lock (m_syncRoot)
+            {
+                if (m_retryScheduled)
+                {
+                    return;
+                }
+                m_retryScheduled = true;
+            }
+
             _ = Dispatcher.InvokeAsync(async () =>
             {
-                await System.Threading.Tasks.Task.Delay(2000);
-                lock (m_syncRoot)
+                try
                 {
-                    foreach (var tiling in m_tilingServices.Values)
+                    await System.Threading.Tasks.Task.Delay(2000);
+                    lock (m_syncRoot)
                     {
-                        tiling.RetryFailedPlacements();
+                        foreach (var tiling in m_tilingServices.Values)
+                        {
+                            tiling.RetryFailedPlacements();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    m_logger.Warning(ex, "Scheduled placement retry pass failed");
+                }
+                finally
+                {
+                    lock (m_syncRoot)
+                    {
+                        m_retryScheduled = false;
                     }
                 }
             });

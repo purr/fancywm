@@ -47,7 +47,9 @@ namespace FancyWM.ViewModels
         public bool DelayReposition { get => m_delayReposition; set => SetField(ref m_delayReposition, value); }
         public bool PreserveWindowPositionsOnExit { get => m_preserveWindowPositionsOnExit; set => SetField(ref m_preserveWindowPositionsOnExit, value); }
         public bool EnableDragDropAutoPanelCreation { get => m_enableDragDropAutoPanelCreation; set => SetField(ref m_enableDragDropAutoPanelCreation, value); }
+        public SiblingDragMode SiblingDragMode { get => m_siblingDragMode; set => SetField(ref m_siblingDragMode, value); }
         public bool HideWindowActionMenuOnHover { get => m_hideWindowActionMenuOnHover; set => SetField(ref m_hideWindowActionMenuOnHover, value); }
+        public bool ShowTabCloseButton { get => m_showTabCloseButton; set => SetField(ref m_showTabCloseButton, value); }
         public bool AnimateWindowMovement { get => m_animateWindowMovement; set => SetField(ref m_animateWindowMovement, value); }
         public bool MouseAutoFocus
         {
@@ -210,10 +212,12 @@ namespace FancyWM.ViewModels
         private bool m_autoCollapsePanels;
         private int m_autoSplitCount;
         private OverflowPlacementStrategy m_overflowPlacementStrategy;
+        private SiblingDragMode m_siblingDragMode = SiblingDragMode.EdgeSplit;
         private bool m_delayReposition;
         private bool m_preserveWindowPositionsOnExit;
         private bool m_enableDragDropAutoPanelCreation;
         private bool m_hideWindowActionMenuOnHover;
+        private bool m_showTabCloseButton;
         private bool m_customAccentColor;
         private bool m_animateWindowMovement;
         private bool m_mouseAutoFocus;
@@ -260,7 +264,13 @@ namespace FancyWM.ViewModels
                     DelayReposition = settings.DelayReposition;
                     PreserveWindowPositionsOnExit = settings.PreserveWindowPositionsOnExit;
                     EnableDragDropAutoPanelCreation = settings.EnableDragDropAutoPanelCreation;
+                    // Coerce a stale/removed saved value (e.g. the old FlatReorder=0) to a valid
+                    // option so the combo isn't blank; the backend already treats it as create-panels.
+                    SiblingDragMode = Enum.IsDefined(typeof(SiblingDragMode), settings.SiblingDragMode)
+                        ? settings.SiblingDragMode
+                        : SiblingDragMode.EdgeSplit;
                     HideWindowActionMenuOnHover = settings.HideWindowActionMenuOnHover;
+                    ShowTabCloseButton = settings.ShowTabCloseButton;
                     AnimateWindowMovement = settings.AnimateWindowMovement;
                     ModifierMoveWindow = settings.ModifierMoveWindow;
                     ModifierMoveWindowAutoFocus = settings.ModifierMoveWindowAutoFocus;
@@ -391,7 +401,9 @@ namespace FancyWM.ViewModels
                     DelayReposition = DelayReposition,
                     PreserveWindowPositionsOnExit = PreserveWindowPositionsOnExit,
                     EnableDragDropAutoPanelCreation = EnableDragDropAutoPanelCreation,
+                    SiblingDragMode = SiblingDragMode,
                     HideWindowActionMenuOnHover = HideWindowActionMenuOnHover,
+                    ShowTabCloseButton = ShowTabCloseButton,
                     AnimateWindowMovement = AnimateWindowMovement,
                     ModifierMoveWindow = ModifierMoveWindow,
                     ModifierMoveWindowAutoFocus = ModifierMoveWindowAutoFocus,

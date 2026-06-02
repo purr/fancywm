@@ -24,6 +24,9 @@ namespace FancyWM.ViewModels
         private double m_fontSize;
         private double m_iconSize;
         private double m_tabWidth;
+        private bool m_showTabCloseButton;
+
+        public bool ShowTabCloseButton { get => m_showTabCloseButton; set => SetField(ref m_showTabCloseButton, value); }
 
         public double DisplayScaling { get => m_displayScaling; set => SetField(ref m_displayScaling, value); }
         public double FontSize { get => m_fontSize; set => SetField(ref m_fontSize, value); }

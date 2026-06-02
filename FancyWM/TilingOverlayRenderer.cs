@@ -114,6 +114,7 @@ namespace FancyWM
         private double m_windowPadding = 4.0;
         private int m_panelFontSize = 12;
         private bool m_hideWindowActionMenuOnHover = false;
+        private bool m_showTabCloseButton = false;
         private IReadOnlyCollection<TilingNode> m_previousSnapshot = [];
         private readonly Dictionary<TilingNode, TilingNodeViewModel> m_nodeViewModels = [];
         private IReadOnlySet<IWindow> m_previewWindows = new HashSet<IWindow>();
@@ -142,6 +143,7 @@ namespace FancyWM
                     m_windowPadding = settings.WindowPadding;
                     m_panelFontSize = settings.PanelFontSize;
                     m_hideWindowActionMenuOnHover = settings.HideWindowActionMenuOnHover;
+                    m_showTabCloseButton = settings.ShowTabCloseButton;
                     UpdateResources();
                 }));
         }
@@ -188,6 +190,7 @@ namespace FancyWM
             m_viewModel.FontSize = m_display.Scaling * m_panelFontSize;
             m_viewModel.IconSize = m_display.Scaling * m_panelFontSize;
             m_viewModel.TabWidth = 175 * m_display.Scaling * m_panelFontSize / 12;
+            m_viewModel.ShowTabCloseButton = m_showTabCloseButton;
         }
 
         private Rectangle AdjustForDisplay(Rectangle rectangle)
