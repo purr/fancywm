@@ -57,7 +57,7 @@ namespace FancyWM
         [STAThread]
         public static int Main(string[] args)
         {
-            if (args.Length == 0)
+            if (args.Length == 0 || args.Contains(ElevationTask.StartArgument))
             {
                 PInvoke.FreeConsole();
             }
@@ -116,8 +116,15 @@ Type 'FancyWM --help' from anywhere after installation.
             }
             Directory.SetCurrentDirectory(fullPath);
 
-            if (File.Exists("administrator-mode") && !IsAdministrator())
+            if (ElevationTask.IsEnabled && !IsAdministrator())
             {
+                // Prefer the scheduled task, which elevates without a UAC prompt. An
+                // instance the task itself launched must not re-trigger it (see
+                // ElevationTask.StartArgument) and falls through to the prompt.
+                if (!args.Contains(ElevationTask.StartArgument) && ElevationTask.TryStart())
+                {
+                    return 0;
+                }
                 try
                 {
                     Process.Start(new ProcessStartInfo
@@ -148,6 +155,9 @@ Type 'FancyWM --help' from anywhere after installation.
                 MessageBox.Show(Strings.About_AlreadyRunning, "FancyWM", MessageBoxButton.OK, MessageBoxImage.Error);
                 return 1;
             }
+
+            // Keeps the task's executable path current across app moves/updates.
+            ElevationTask.EnsureRegistered();
 
             // Parse command line
             var logLevel = args.Contains("-vv")

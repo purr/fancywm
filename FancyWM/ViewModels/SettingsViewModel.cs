@@ -109,11 +109,11 @@ namespace FancyWM.ViewModels
             {
                 if (value)
                 {
-                    File.WriteAllBytes("administrator-mode", []);
+                    ElevationTask.Enable();
                 }
                 else
                 {
-                    File.Delete("administrator-mode");
+                    ElevationTask.Disable();
                 }
                 SetField(ref m_runsAsAdministrator, value);
             }
@@ -320,7 +320,7 @@ namespace FancyWM.ViewModels
                 });
             });
 
-            if (File.Exists("administrator-mode"))
+            if (ElevationTask.IsEnabled)
             {
                 SetField(ref m_runsAsAdministrator, true, nameof(RunsAsAdministrator));
             }
