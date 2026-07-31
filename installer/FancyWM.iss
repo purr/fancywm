@@ -79,6 +79,22 @@ Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: startu
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
+[UninstallRun]
+; Administrator mode registers a Task Scheduler task (ElevationTask.TaskName, kept in
+; sync with the name below) so elevating prompts for UAC only once. Nothing else takes
+; it back out, so uninstalling would leave a task pointing at a deleted executable.
+;
+; Best-effort by design: registering the task needs elevation and so does deleting it,
+; but this installer is per-user and the uninstaller normally runs non-elevated — see
+; the same caveat on ElevationTask.Unregister. It succeeds when the user happens to run
+; the uninstaller elevated and is a no-op otherwise. A surviving task is inert rather
+; than harmful: it has no trigger and only ever runs on demand.
+;
+; Wrapped in `cmd /c ... & exit /b 0` because schtasks exits non-zero both when the task
+; was never registered (administrator mode never enabled, the common case) and when the
+; delete is denied for lack of elevation. Neither deserves a failure dialog.
+Filename: "{cmd}"; Parameters: "/c schtasks /Delete /TN ""{#AppName}"" /F >nul 2>&1 & exit /b 0"; Flags: runhidden; RunOnceId: "RemoveElevationTask"
+
 [UninstallDelete]
 ; Written by the app at runtime when autostart is toggled on from Settings, so Inno
 ; does not track it and would otherwise leave it behind.
